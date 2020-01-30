@@ -5,11 +5,11 @@
 //PIN CONFIGURATION
 #define LEDPIN 2      //strip pin. Any for ESP32, gpio2 or 3 is recommended for ESP8266 (gpio2/3 are labeled D4/RX on NodeMCU and Wemos)
 //#define USE_APA102  // Uncomment for using APA102 LEDs.
+#define USE_APA102  // Uncomment for using APA102 LEDs.
 //#define USE_WS2801  // Uncomment for using WS2801 LEDs (make sure you have NeoPixelBus v2.5.6 or newer)
 //#define USE_LPD8806 // Uncomment for using LPD8806
 //#define WLED_USE_ANALOG_LEDS //Uncomment for using "dumb" PWM controlled LEDs (see pins below, default R: gpio5, G: 12, B: 15, W: 13)
 //#define WLED_USE_H801 //H801 controller. Please uncomment #define WLED_USE_ANALOG_LEDS as well
-//#define WLED_USE_5CH_LEDS  //5 Channel H801 for cold and warm white
 
 #define BTNPIN  0  //button pin. Needs to have pullup (gpio0 recommended)
 #define IR_PIN  4  //infrared pin (-1 to disable)  MagicHome: 4, H801 Wifi: 0
@@ -23,6 +23,8 @@
 #if defined(USE_APA102) || defined(USE_WS2801) || defined(USE_LPD8806)
  #define CLKPIN 0
  #define DATAPIN 2
+ #define CLKPIN 26
+ #define DATAPIN 27
  #if BTNPIN == CLKPIN || BTNPIN == DATAPIN
   #undef BTNPIN   // Deactivate button pin if it conflicts with one of the APA102 pins.
  #endif
@@ -35,6 +37,7 @@
     #define GPIN 13   //G pin for analog LED strip
     #define BPIN 12   //B pin for analog LED strip
     #define WPIN 14   //W pin for analog LED strip 
+    #define WPIN 14   //W pin for analog LED strip (W1: 14, W2: 04)
     #define W2PIN 04  //W2 pin for analog LED strip
     #undef BTNPIN
     #undef IR_PIN
@@ -45,6 +48,7 @@
     #define GPIN 12   //G pin for analog LED strip
     #define BPIN 15   //B pin for analog LED strip
     #define WPIN 13   //W pin for analog LED strip 
+    #define WPIN 13   //W pin for analog LED strip (W1: 14, W2: 04)
   #endif
   #undef RLYPIN
   #define RLYPIN -1 //disable as pin 12 is used by analog LEDs
