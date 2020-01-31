@@ -3037,3 +3037,97 @@ uint16_t WS2812FX::mode_percent(void) {
 
  	return FRAMETIME;
 }
+
+
+
+#define MAX_BALLS_V2 10
+#define MAX_SEGS_V2 10
+
+typedef struct Ball_v2 {
+  unsigned long lastBounceTime;
+  float impactVelocity;
+  float height;
+} ball_v2;
+
+typedef struct Ball_seg_v2 {
+  unsigned long lastBounceTime;
+  float impactVelocity;
+  float height;
+} ball_seg_v2;
+
+typedef struct Ball_data_v2 {
+  Ball_v2 balls[MAX_BALLS_V2];
+  Ball_seg_v2 segs[MAX_SEGS_V2];
+} ball_data_v2;
+
+/*
+*  Bouncing Balls Effect v2
+*/
+
+
+uint16_t WS2812FX::mode_bouncing_balls_v2(void) {
+  //Serial.println("---DEBUG INFO---");
+  //Serial.println("bouncing_v2: ");// DEBUG_PRINTLN(millis());
+  //Serial.println(FRAMETIME);
+  //allocate segment data
+  uint16_t dataSize = sizeof(ball_data_v2);
+  if (!SEGENV.allocateData(dataSize)) return mode_static(); //allocation failed
+  
+  Ball_data_v2* ball_data = reinterpret_cast<Ball_data_v2*>(SEGENV.data);
+  Ball_v2* balls = ball_data->balls;
+  Ball_seg_v2* segs = ball_data->segs;
+  
+  Serial.println("Ball:");
+  Serial.println(balls[0].height);
+  Serial.println("Seg:");
+  Serial.println(segs[0].height);
+  
+  //balls[0].height+=1;
+  
+  //Serial.println(balls)
+  // number of balls based on intensity setting to max of 7 (cycles colors)
+  // non-chosen color is a random color
+  uint16_t maxNumBalls = 10; 
+  uint8_t numBalls = int(((SEGMENT.intensity * (maxNumBalls - 0.8f)) / 255) + 1);
+  
+  float gravity                           = -9.81; // standard value of gravity
+  float impactVelocityStart               = sqrt( -2 * gravity);
+
+  unsigned long time = millis();
+
+  if (SEGENV.call == 0) {
+    for (uint8_t i = 0; i < maxNumBalls; i++) balls[i].lastBounceTime = time;
+  }
+  
+  bool hasCol2 = SEGCOLOR(2);
+  fill(hasCol2 ? BLACK : SEGCOLOR(1));
+  
+  for (uint8_t i = 0; i < numBalls; i++) {
+    float timeSinceLastBounce = (time - balls[i].lastBounceTime)/((255-SEGMENT.speed)*8/256 +1);
+    balls[i].height = 0.5 * gravity * pow(timeSinceLastBounce/1000 , 2.0) + balls[i].impactVelocity * timeSinceLastBounce/1000;
+
+    if (balls[i].height < 0) { //start bounce
+      balls[i].height = 0;
+      //damping for better effect using multiple balls
+      float dampening = 0.90 - float(i)/pow(numBalls,2);
+      balls[i].impactVelocity = dampening * balls[i].impactVelocity;
+      balls[i].lastBounceTime = time;
+
+      if (balls[i].impactVelocity < 0.015) {
+        balls[i].impactVelocity = impactVelocityStart;
+      }
+    }
+    
+    uint32_t color = SEGCOLOR(0);
+    if (SEGMENT.palette) {
+      color = color_wheel(i*(256/max(numBalls, 8)));
+    } else if (hasCol2) {
+      color = SEGCOLOR(i % NUM_COLORS);
+    }
+
+    uint16_t pos = round(balls[i].height * (SEGLEN - 1));
+    setPixelColor(pos, color);
+  }
+
+  return FRAMETIME;
+}
