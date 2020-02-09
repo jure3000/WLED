@@ -3041,23 +3041,39 @@ uint16_t WS2812FX::mode_percent(void) {
 
 
 #define MAX_BALLS_V2 10
+#define BB_V2_MODE 99
 #define MAX_SEGS_V2 10
 
 typedef struct Ball_v2 {
-  unsigned long lastBounceTime;
-  float impactVelocity;
-  float height;
+  bool active=false;
+  byte r=255;
+  byte g=0;
+  byte b=0;
+  float  start_position;
+  float  start_velocity;
+  float  position;
+  float  old_position;
+  float  velocity=0.0;
+  float damping = 0.1;
+  bool initiate_pos = false;
+  bool ignore_collisions=false;
+  int size=1;
 } ball_v2;
 
 typedef struct Ball_seg_v2 {
-  unsigned long lastBounceTime;
-  float impactVelocity;
-  float height;
+  bool active=false;
+  int startpixel=0;
+  int endpixel=50;
+  int startgrav=50;
+  int endgrav=50;
 } ball_seg_v2;
 
 typedef struct Ball_data_v2 {
   Ball_v2 balls[MAX_BALLS_V2];
   Ball_seg_v2 segs[MAX_SEGS_V2];
+  long last_time;
+  int num_balls=0;
+  int num_iter;
 } ball_data_v2;
 
 /*
@@ -3076,18 +3092,210 @@ uint16_t WS2812FX::mode_bouncing_balls_v2(void) {
   Ball_data_v2* ball_data = reinterpret_cast<Ball_data_v2*>(SEGENV.data);
   Ball_v2* balls = ball_data->balls;
   Ball_seg_v2* segs = ball_data->segs;
+
   
-  Serial.println("Ball:");
-  Serial.println(balls[0].height);
-  Serial.println("Seg:");
-  Serial.println(segs[0].height);
+  //num_iter=10;
   
-  //balls[0].height+=1;
+  //Serial.println("Num balls:");
+  //Serial.println(num_balls);
+  fill(BLACK);
+  if (SEGENV.call == 0) {
+    //initiation
+    Serial.println("Init balls");
+    
+
+    for (uint8_t i = 0; i < MAX_BALLS_V2; i++) 
+    {
+      balls[i].active=false;
+    }
+    for (uint8_t i = 0; i < MAX_NUM_SEGMENTS; i++) 
+    {
+      if (_segments[0].mode!=BB_V2_MODE)
+      {
+      segs[i].active=false;
+      }
+      else
+      {
+        segs[i].active=true;
+        segs[i].startpixel=_segments[i].start;
+        segs[i].endpixel=_segments[i].stop;
+        segs[i].startgrav=10.0;
+        segs[i].endgrav=10.0;
+      }
+    }
+
+    
+    ball_data->num_balls=2;
+    ball_data->num_iter=10;
+
+    /*    Serial.println(_segments[0].start);
+    Serial.println(_segments[0].stop);
+    Serial.println(_segments[0].palette);
+    Serial.println(_segments[0].mode);
+    Serial.println(_segments[0].colors[0]);
+    Serial.println(_segments[0].colors[1]);
+    Serial.println(_segments[0].colors[2]);*/
+    
+    /*segs[0].active=true;
+    segs[0].startpixel=0;
+    segs[0].endpixel=25;
+    segs[0].startgrav=10.0;
+    segs[0].endgrav=10.0;*/
+    
+    for (uint8_t i = 0; i < ball_data->num_balls; i++) 
+    {
+      balls[i].active=true;
+      balls[i].size=1.0;
+      balls[i].position = (float)(i+1)*10.0;
+      balls[i].start_position= balls[i].position;
+      balls[i].old_position = balls[i].position;
+      balls[i].velocity = 40.0*pow(-1,i+1);
+      balls[i].start_velocity= balls[i].velocity;
+      balls[i].damping = 0.3;
+      balls[i].ignore_collisions=false;
+    }
+    ball_data->last_time = millis();
+  }
   
-  //Serial.println(balls)
-  // number of balls based on intensity setting to max of 7 (cycles colors)
-  // non-chosen color is a random color
-  uint16_t maxNumBalls = 10; 
+  int dt0 =  millis() - ball_data->last_time;
+  
+  //Serial.println("dt0:");
+  //Serial.println(dt0);
+  //Serial.println(millis());
+  
+  ball_data->last_time = millis();
+  float dt_rem=(float)dt0;///(float)ball_data->num_iter;
+  if (dt0>100) return 0;
+
+  
+  for (int iter=0;iter<100;iter++)
+  {
+    if(dt_rem==0.0) break;
+
+    //calculate max velocity of balls
+    //it will be used to dfetermine maximum time increment of this iteration
+    float maxvelocity=0.0;
+    for (int i = 0 ; i < ball_data->num_balls ; i++) {
+      if (!balls[i].active) continue;
+      maxvelocity=max(maxvelocity,abs(balls[i].velocity));
+    }
+    //maximum distance that each pixel ma travel in one increment is 0.5
+    //max time increment will be calculated to not violate it
+    float dt=0.0;
+    if (maxvelocity==0.0)
+    {
+      dt=dt_rem;
+    }
+    else
+    {
+      dt=min(dt_rem,0.5/maxvelocity*1000);
+    }
+
+
+    //calculate new position of balls
+    for (int i = 0 ; i < ball_data->num_balls ; i++) {
+      if (!balls[i].active) continue;
+      float grav=0.0;
+      for (int c=0;c<MAX_NUM_SEGMENTS;c++)
+      {
+        if (!segs[i].active) continue;
+        if (balls[i].position>(float)segs[c].startpixel & balls[i].position < (float)segs[c].endpixel)
+        {
+          //ball in this segment
+          if (balls[i].position<((float)segs[c].startpixel+(float)segs[c].endpixel)/2)
+          {
+            //ball in first hal of the segment
+            grav=segs[c].startgrav*(-1);
+          }
+          else
+          {
+            grav=segs[c].endgrav;
+          }
+          break;
+        }
+      }
+      float dx = (balls[i].velocity)*dt/1000.0;
+      float dv = grav*dt/1000.0;
+      balls[i].old_position=balls[i].position;
+      balls[i].position+= dx;
+      balls[i].velocity+= dv;
+
+      float basedist=10000.0;
+      for (int c=0;c<MAX_NUM_SEGMENTS;c++)
+      {
+        if (!segs[i].active) continue;
+        basedist=min(basedist,abs((float)segs[c].startpixel-balls[i].position));
+        basedist=min(basedist,abs((float)segs[c].endpixel-balls[i].position));
+        if (basedist<0.5)
+        {
+          Serial.println("collision");
+          balls[i].velocity=balls[i].velocity*-1.0*(1.0-balls[i].damping);
+          balls[i].position=balls[i].old_position;
+          Serial.println(balls[i].velocity);
+          if (abs(balls[i].velocity)<2.0)
+          {
+            balls[i].position=balls[i].start_position;
+            balls[i].velocity=balls[i].start_velocity;
+          }
+        }
+      }
+      
+    }
+    dt_rem-=dt;
+
+  //check collisions between ballas
+    for (int b1=0;b1<ball_data->num_balls;b1++)
+    {
+      if(balls[b1].ignore_collisions || !balls[b1].active) continue;
+      
+      for (int b2=b1+1;b2<ball_data->num_balls;b2++)
+      {
+        if(balls[b2].ignore_collisions || !balls[b2].active) continue;
+        
+        //float p1=position[b1];
+        //float p2=position[b2];
+        if (abs(balls[b1].position-balls[b2].position)<1)
+        {
+          float v1=balls[b1].velocity;
+          float v2=balls[b2].velocity;
+          float m1=balls[b1].size;
+          float m2=balls[b2].size;
+          balls[b1].velocity=(m1-m2)/(m1+m2)*v1+2*m2/(m1+m2)*v2;
+          balls[b2].velocity=2*m1/(m1+m2)*v1+(m2-m1)/(m1+m2)*v2;
+          balls[b1].position=balls[b1].old_position;
+          balls[b2].position=balls[b2].old_position;
+        }
+      }
+    }
+
+
+
+
+
+    
+  }
+  setPixelColor(balls[0].position, SEGCOLOR(0));
+  setPixelColor(balls[1].position, SEGCOLOR(1));
+
+    
+    //Serial.println("balls[0].position");
+    //Serial.println(balls[0].position);
+    //Serial.println(balls[1].position);
+    Serial.println(SEGMENT.start);
+    /*Serial.println(_segments[0].start);
+    Serial.println(_segments[0].stop);
+    Serial.println(_segments[0].palette);
+    Serial.println(_segments[0].mode);
+    Serial.println(_segments[0].colors[0]);
+    Serial.println(_segments[0].colors[1]);
+    Serial.println(_segments[0].colors[2]);*/
+    /*segment _segments[MAX_NUM_SEGMENTS] = { // SRAM footprint: 24 bytes per element
+      // start, stop, speed, intensity, palette, mode, options, grouping, spacing, opacity (unused), color[]
+      { 0, 7, DEFAULT_SPEED, 128, 0, DEFAULT_MODE, NO_OPTIONS, 1, 0, 255, {DEFAULT_COLOR}}
+    };*/
+
+    
+  /*uint16_t maxNumBalls = 10; 
   uint8_t numBalls = int(((SEGMENT.intensity * (maxNumBalls - 0.8f)) / 255) + 1);
   
   float gravity                           = -9.81; // standard value of gravity
@@ -3095,9 +3303,7 @@ uint16_t WS2812FX::mode_bouncing_balls_v2(void) {
 
   unsigned long time = millis();
 
-  if (SEGENV.call == 0) {
-    for (uint8_t i = 0; i < maxNumBalls; i++) balls[i].lastBounceTime = time;
-  }
+  
   
   bool hasCol2 = SEGCOLOR(2);
   fill(hasCol2 ? BLACK : SEGCOLOR(1));
@@ -3127,7 +3333,7 @@ uint16_t WS2812FX::mode_bouncing_balls_v2(void) {
 
     uint16_t pos = round(balls[i].height * (SEGLEN - 1));
     setPixelColor(pos, color);
-  }
+  }*/
 
-  return FRAMETIME;
+  return 0;
 }

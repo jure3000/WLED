@@ -28,7 +28,7 @@
 #include "palettes.h"
 
 #define LED_SKIP_AMOUNT  1
-#define MIN_SHOW_DELAY  15
+#define MIN_SHOW_DELAY  1
 
 void WS2812FX::init(bool supportWhite, uint16_t countPixels, bool skipFirst)
 {
@@ -55,6 +55,7 @@ void WS2812FX::init(bool supportWhite, uint16_t countPixels, bool skipFirst)
 
 void WS2812FX::service() {
   uint32_t nowUp = millis(); // Be aware, millis() rolls over every 49 days
+  
   now = nowUp + timebase;
   if (nowUp - _lastShow < MIN_SHOW_DELAY) return;
   bool doShow = false;
@@ -68,12 +69,15 @@ void WS2812FX::service() {
         _virtualSegmentLength = SEGMENT.virtualLength();
         doShow = true;
         handle_palette();
+        //Serial.println("delay");
         uint16_t delay = (this->*_mode[SEGMENT.mode])();
+        //delay=1;
         SEGENV.next_time = nowUp + delay;
         if (SEGMENT.mode != FX_MODE_HALLOWEEN_EYES) SEGENV.call++;
       }
     }
   }
+  
   _virtualSegmentLength = 0;
   if(doShow) {
     yield();
